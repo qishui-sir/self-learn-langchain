@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage
 from langchain_tavily import TavilySearch
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
+from langchain.agents.middleware import SummarizationMiddleware
 load_dotenv()
 
 system_promt ="""
@@ -25,7 +26,13 @@ Search_Tavily = TavilySearch(
     topic = "general",
 )
 
-config = {"configurable":{"thread_id":"1"}}
+middleware = SummarizationMiddleware(
+    model="deepseek-chat",
+    trigger=("messages",3),
+    keep=("messages",1),
+)
+
+config = {"configurable":{"thread_id":"2"}}
 DB_URI = "postgres://postgres:1@localhost:5432/postgres?sslmode=disable"
 with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
     checkpointer.setup()
@@ -33,15 +40,21 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
         model="deepseek-chat",
         system_prompt=system_promt,
         tools=[Search_Tavily],
-        checkpointer=checkpointer,       #InMemorySaver是短期记忆，这里用数据库postgres
+        checkpointer=checkpointer,       #InMemorySaver短期记忆，这里用数据库postgres进行持久存储
+        middleware=[middleware],         #用SummarizationMiddleware进行记忆管理，压缩上下文
     )
     human_messages = HumanMessage(content="我最喜欢猫咪")
     response = agent.invoke(
         {"messages":human_messages},
         config,
     )
+    human_messages = HumanMessage(content="我也喜欢吃西瓜")
+    response = agent.invoke(
+        {"messages":human_messages},
+        config,
+    )
 
-    human_messages = HumanMessage(content="你知道我最喜欢什么动物吗")
+    human_messages = HumanMessage(content="你知道我最喜欢吃什么吗")
     response = agent.invoke(
         {"messages":human_messages},
         config,
